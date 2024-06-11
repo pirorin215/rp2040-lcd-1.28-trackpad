@@ -12,6 +12,7 @@ cd rp2040-lcd-1.28-trackpad
 2. pico-sdk PATH
 ```
 export PICO_SDK_PATH=/mnt/c/pico-sdk
+export PICO_TOOLCHAIN_PATH=/Users/[user]/Library/xPacks/@xpack-dev-tools/arm-none-eabi-gcc/13.2.1-1.1.1/.content/bin/
 ```
 
 3. cmake
