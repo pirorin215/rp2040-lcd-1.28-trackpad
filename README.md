@@ -19,12 +19,11 @@ export PICO_TOOLCHAIN_PATH=/Users/[user]/Library/xPacks/@xpack-dev-tools/arm-non
 ```
 mkdir -p build
 cd build
-cmake CMakeLists.txt
+cmake ../CMakeLists.txt 
 ```
 
 4. make
 ```
-cd build
 make
 ```
 
