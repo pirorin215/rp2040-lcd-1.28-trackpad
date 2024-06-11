@@ -8,16 +8,16 @@ How to build
 
 2. pico-sdk PATH
 
-export PICO_SDK_PATH=/mnt/c/pico-sdk
+   - export PICO_SDK_PATH=/mnt/c/pico-sdk
 
 3. cmake
 
-cmake CMakeLists.txt
+   - cmake CMakeLists.txt
 
 4. make
 
-make
+   - make
 
-5. 
+5. Write uf2
 
-Write uf2 to raspberry pi pico
+   - Write uf2 to raspberry pi pico
