@@ -1,0 +1,3 @@
+file(REMOVE_RECURSE
+  "libQMI8658.a"
+)
