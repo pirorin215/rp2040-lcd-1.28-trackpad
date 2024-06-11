@@ -6,6 +6,8 @@
 
 1. Download and extract the program source
 
+   - Download and extract the program source
+
 2. pico-sdk PATH
 ```
 export PICO_SDK_PATH=/mnt/c/pico-sdk
@@ -19,7 +21,5 @@ cmake CMakeLists.txt
 make
 ```
 5. Write uf2
-```
-Write uf2 to raspberry pi pico
-```
+   - Write uf2 to raspberry pi pico
 
