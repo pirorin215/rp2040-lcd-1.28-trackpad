@@ -3,9 +3,9 @@
 
 ## How to build
 
-1. Download and extract the program source
+1. Download program source
 ```
-unzip rp2040-lcd-1.28-trackpad.zip
+git clone https://github.com/pirorin215/rp2040-lcd-1.28-trackpad
 cd rp2040-lcd-1.28-trackpad
 ```
 
