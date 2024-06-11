@@ -1,9 +1,1 @@
 lib/**/*.cmake
-lib/**/*.make
-CMakeCache.txt
-CMakeFiles/
-Makefile
-cmake_install.cmake
-elf2uf2/
-generated/
-pico-sdk/
