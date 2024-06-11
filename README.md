@@ -5,9 +5,10 @@
 # How to build
 
 1. Download and extract the program source
-
-   - Download and extract the program source
-
+```
+unzip rp2040-lcd-1.28-trackpad.zip
+cd rp2040-lcd-1.28-trackpad
+```
 2. pico-sdk PATH
 ```
 export PICO_SDK_PATH=/mnt/c/pico-sdk
