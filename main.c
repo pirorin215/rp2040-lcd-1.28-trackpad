@@ -74,8 +74,7 @@ typedef struct {
 static LOSA_t* plosa=(LOSA_t*)losabuf;
 #define LOSASIZE (&plosa->dummy - &plosa->theme)
 
-#define SCRSAV 100			// 1st screensaver
-int16_t screensaver=SCRSAV;
+int16_t screensaver=100;
 bool deepsleep=false;
 
 volatile uint8_t flag_touch = 0;
@@ -242,6 +241,14 @@ typedef enum {
 	SG_NUM,
 } SG_ITEM;
 
+typedef enum {
+	DIR_TOP,
+	DIR_BOTTOM,
+	DIR_RIGHT,
+	DIR_LEFT,
+	DIR_NUM,
+} SG_DIR;
+
 uint8_t g_sg_data[SG_NUM];
 
 void truncateString(char* text, int maxLength) {
@@ -268,13 +275,40 @@ void load_sg_from_flash(void) {
 	}
 }
 
+void lcd_range_line_draw(uint16_t line_color, int dir, int len) {
+
+	// 円の角を超えすぎるとマイコンが固まるので開始と終点を補正するための数値
+	// 端から40pixelより下で四角で考えた場合に0と最大を指定すると落ちる
+	int other_len = len <= 40 ? 40 - len : 0;
+
+	switch(dir) {
+		case DIR_TOP:
+			lcd_line(other_len, len, SCREEN_WIDTH - other_len, len, line_color, 3);
+			break;
+		case DIR_BOTTOM:
+			lcd_line(other_len, SCREEN_HEIGHT - len, SCREEN_WIDTH - other_len, SCREEN_HEIGHT - len, line_color, 3);
+			break;
+		case DIR_LEFT:
+			lcd_line(len, other_len, len, SCREEN_HEIGHT - other_len, line_color, 3);
+			break;
+		case DIR_RIGHT:
+			lcd_line(SCREEN_HEIGHT - len, other_len, SCREEN_HEIGHT - len, SCREEN_HEIGHT - other_len, line_color, 3);
+			break;
+	}
+}
+
+const uint16_t COLOR_DRAG     = YELLOW;
+const uint16_t COLOR_R_CLICK  = RED;
+const uint16_t COLOR_SCROLL_Y = BLUE;
+const uint16_t COLOR_SCROLL_X = ORANGE;
+
 void lcd_text_draw(uint16_t lcd_color) {
 
 	// 線を描画
-	lcd_line(   SCROLL_Y_LIMIT_X,                0,    SCROLL_Y_LIMIT_X,     SCREEN_WIDTH, BLUE,   3);
-	lcd_line(                  0, SCROLL_X_LIMIT_Y,       SCREEN_HEIGHT, SCROLL_X_LIMIT_Y, ORANGE, 3);
-	lcd_line(R_CLICK_LIMIT_X,                0, R_CLICK_LIMIT_X,     SCREEN_WIDTH, RED,    3);
-	lcd_line(                  0,     DRAG_LIMIT_Y,       SCREEN_HEIGHT,     DRAG_LIMIT_Y, YELLOW, 3);
+	lcd_range_line_draw(COLOR_DRAG,     g_sg_data[SG_DRUG_DIR],     g_sg_data[SG_DRUG_LEN]);
+	lcd_range_line_draw(COLOR_R_CLICK,  g_sg_data[SG_R_CLICK_DIR],  g_sg_data[SG_R_CLICK_LEN]);
+	lcd_range_line_draw(COLOR_SCROLL_Y, g_sg_data[SG_SCROLL_Y_DIR], g_sg_data[SG_SCROLL_Y_LEN]);
+	lcd_range_line_draw(COLOR_SCROLL_X, g_sg_data[SG_SCROLL_X_DIR], g_sg_data[SG_SCROLL_X_LEN]);
 
 	// 文字列データを表示
 	for(int i=0; i<sizeof(g_text_buf)/sizeof(*g_text_buf); i++ ) {
@@ -551,6 +585,19 @@ void lcd_sg_set(int place, char *text) {
 
 bool sg_operation(int *sg_no, axis_t axis_cur) {
 
+	int max = 0;
+	switch(*sg_no) {
+		case SG_SLEEP:		max=30;		break;
+		case SG_DRUG_DIR:	max=DIR_NUM;	break;
+		case SG_DRUG_LEN:	max=115;	break;
+		case SG_R_CLICK_DIR:	max=DIR_NUM;	break;
+		case SG_R_CLICK_LEN:	max=115;	break;
+		case SG_SCROLL_Y_DIR:	max=DIR_NUM;	break;
+		case SG_SCROLL_Y_LEN:	max=115;	break;
+		case SG_SCROLL_X_DIR:	max=DIR_NUM;	break;
+		case SG_SCROLL_X_LEN:	max=115;	break;
+	}
+
 	if(is_frame_touch(SG_DOWN, axis_cur)) {
 		printf("SG_DOWN\n");
 		if(g_sg_data[*sg_no] > 0) {
@@ -559,7 +606,7 @@ bool sg_operation(int *sg_no, axis_t axis_cur) {
 		return true;
 	} else if(is_frame_touch(SG_UP, axis_cur)) {
 		printf("SG_UP\n");
-		if(g_sg_data[*sg_no] < 30) {
+		if(g_sg_data[*sg_no] < max) {
 			g_sg_data[*sg_no] ++;
 		}
 		return true;
@@ -640,6 +687,57 @@ void sg_display_loop() {
 	lcd_clr(BLACK);		// 画面クリア
 	save_sg_to_flash();	// 設定保存
 }
+			
+// 押しはじめ判定
+bool isRangePress(axis_t axis_cur, int dir, int len) {
+	bool bInRange = false;
+	switch(dir) {
+		case DIR_TOP:
+			bInRange = axis_cur.y <= len;
+			break;
+		case DIR_BOTTOM:
+			bInRange = axis_cur.y >= SCREEN_HEIGHT - len;
+			break;
+		case DIR_LEFT:
+			bInRange = axis_cur.x <= len;
+			break;
+		case DIR_RIGHT:
+			bInRange = axis_cur.x >= SCREEN_WIDTH - len;
+			break;
+	}
+	if(bInRange) {
+		printf("range press dir=%d len=%d\r\n", dir, len);
+		return true;
+	}
+	return false;
+}
+
+// 押し続け判定
+bool isKeepPress(int release_cnt, axis_t axis_touch, axis_t axis_cur, int dir, int len) {
+
+	if(release_cnt > 20 && abs_value(axis_touch.x, axis_cur.x) < 5 && abs_value(axis_touch.y, axis_cur.y) < 5) {
+		bool bInRange = false;
+		switch(dir) {
+			case DIR_TOP:
+				bInRange = axis_cur.y <= len;
+				break;
+			case DIR_BOTTOM:
+				bInRange = axis_cur.y >= SCREEN_HEIGHT - len;
+				break;
+			case DIR_LEFT:
+				bInRange = axis_cur.x <= len;
+				break;
+			case DIR_RIGHT:
+				bInRange = axis_cur.x >= SCREEN_WIDTH - len;
+				break;
+		}
+		if(bInRange) {
+			printf("keep press dir=%d len=%d\r\n", dir, len);
+			return true;
+		}
+	}
+	return false;
+}
 
 /** メイン処理ループ **/
 void mouse_display_loop() {
@@ -672,7 +770,7 @@ void mouse_display_loop() {
 		if(flag_touch){
 			release_cnt++;
 		
-			screensaver=SCRSAV;
+			screensaver=g_sg_data[SG_SLEEP] * 50;
 			if(plosa->is_sleeping){
 			      lcd_set_brightness(plosa->BRIGHTNESS);
 			      lcd_sleepoff();
@@ -693,13 +791,13 @@ void mouse_display_loop() {
 				touch_mode = MODE_TOUCHING;
 		
 				// 縦スクロール判定
-				if(axis_cur.x > SCROLL_Y_LIMIT_X) {
+				if(isRangePress(axis_cur, g_sg_data[SG_SCROLL_Y_DIR], g_sg_data[SG_SCROLL_Y_LEN])) {
 					printf("start scroll y\r\n");
 					touch_mode = MODE_SCROLL_Y;
 				}
 				
 				// 横スクロール判定
-				if(axis_cur.y > SCROLL_X_LIMIT_Y) {
+				if(isRangePress(axis_cur, g_sg_data[SG_SCROLL_X_DIR], g_sg_data[SG_SCROLL_X_LEN])) {
 					printf("start scroll x\r\n");
 					touch_mode = MODE_SCROLL_X;
 				}
@@ -714,14 +812,14 @@ void mouse_display_loop() {
 			} 
 				
 			// ドラッグ開始判定
-			if(release_cnt > 20 && abs_value(axis_touch.x, axis_cur.x) < 5 && abs_value(axis_touch.y, axis_cur.y) < 5 && axis_cur.y < DRAG_LIMIT_Y) {
+			if(isKeepPress(release_cnt, axis_touch, axis_cur, g_sg_data[SG_DRUG_DIR], g_sg_data[SG_DRUG_LEN])) {
 				printf("drag start\r\n");
 				touch_mode = MODE_DRAG;
 			}
 		
 			// 右クリック判定
-			if(release_cnt > 20 && abs_value(axis_touch.x, axis_cur.x) < 5 && abs_value(axis_touch.y, axis_cur.y) < 5 && axis_cur.x < R_CLICK_LIMIT_X) {
-				printf("MODE_R_CLICK\r\n");
+			if(isKeepPress(release_cnt, axis_touch, axis_cur, g_sg_data[SG_R_CLICK_DIR], g_sg_data[SG_R_CLICK_LEN])) {
+				printf("r click\r\n");
 				touch_mode = MODE_R_CLICK;
 			}
 
@@ -767,7 +865,7 @@ void mouse_display_loop() {
 				screensaver--;
 				if(screensaver<=0){
 					plosa->is_sleeping=true;
-					screensaver=SCRSAV;
+					screensaver=g_sg_data[SG_SLEEP] * 50;
 					lcd_set_brightness(0);
 					lcd_sleepon();
 				}
@@ -783,7 +881,7 @@ void mouse_display_loop() {
 				axis_old = axis_cur;
 				break;	
 			case MODE_SCROLL_Y:
-				if(axis_cur.x > SCROLL_Y_LIMIT_X) {
+				if(isRangePress(axis_cur, g_sg_data[SG_SCROLL_Y_DIR], g_sg_data[SG_SCROLL_Y_LEN])) {
 					axis_delta = get_axis_delta(axis_cur, axis_old, 0.5);
 					lcd_text_set(2, lcd_color, "SCROLL Y dx:%d dy:%d", axis_delta.x, axis_delta.y);
 					i2c_data_set(NOCHANGE_CLICK, 0, 0, 0, -axis_delta.y);
@@ -795,7 +893,7 @@ void mouse_display_loop() {
 				}
 				break;	
 			case MODE_SCROLL_X:
-				if(axis_cur.y > SCROLL_X_LIMIT_Y) {
+				if(isRangePress(axis_cur, g_sg_data[SG_SCROLL_X_DIR], g_sg_data[SG_SCROLL_X_LEN])) {
 					axis_delta = get_axis_delta(axis_cur, axis_old, 0.5);
 					lcd_text_set(2, lcd_color, "SCROLL X dx:%d dy:%d", axis_delta.x, axis_delta.y);
 					i2c_data_set(NOCHANGE_CLICK, 0, 0, axis_delta.x, 0);
@@ -808,7 +906,7 @@ void mouse_display_loop() {
 			case MODE_DRAG:
 				lcd_text_set(2, lcd_color, "DRAG");
 
-				lcd_color = ORANGE;
+				lcd_color = COLOR_DRAG;
 				axis_delta = get_axis_delta(axis_cur, axis_old, 0.7);
 				i2c_data_set(L_CLICK, axis_delta.x, axis_delta.y, 0, 0);
 				axis_old = axis_cur;
