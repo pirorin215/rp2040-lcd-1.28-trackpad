@@ -212,6 +212,11 @@ char g_old_text_buf[3][128] = {{0}};
 ///////////////////////////////
 // 設定画面系
 ///////////////////////////////
+const uint16_t COLOR_DRAG     = YELLOW;
+const uint16_t COLOR_R_CLICK  = RED;
+const uint16_t COLOR_SCROLL_Y = BLUE;
+const uint16_t COLOR_SCROLL_X = GREEN;
+
 #define RENZOKU_TOUCH_MSEC_LIMIT   500 // 連続入力の判定msec
 #define SG_TITLE_X      10
 #define SG_TITLE_Y     100
@@ -222,11 +227,14 @@ char g_old_text_buf[3][128] = {{0}};
 #define SG_ITEM_HEIGHT  60
 #define SG_ITEM_WIDTH  115
 
+// 設定画面の設定値のフレーム
+int SG_FRAME_VALUE[4] = {88, 137, 88 + 90,  137 + 25};
+
 // 設定画面のボタンのフレーム
-int SG_DOWN[4] = {  0,  30,   0 + SG_ITEM_WIDTH,  30 + SG_ITEM_HEIGHT};
-int SG_UP  [4] = {125,  30, 125 + SG_ITEM_WIDTH,  30 + SG_ITEM_HEIGHT};
-int SG_PREV[4] = {  0, 180,   0 + SG_ITEM_WIDTH, 180 + SG_ITEM_HEIGHT};
-int SG_NEXT[4] = {125, 180, 125 + SG_ITEM_WIDTH, 180 + SG_ITEM_HEIGHT};
+int SG_FRAME_DOWN[4] =  {  0,  30,   0 + SG_ITEM_WIDTH,  30 + SG_ITEM_HEIGHT};
+int SG_FRAME_UP  [4] =  {125,  30, 125 + SG_ITEM_WIDTH,  30 + SG_ITEM_HEIGHT};
+int SG_FRAME_PREV[4] =  {  0, 180,   0 + SG_ITEM_WIDTH, 180 + SG_ITEM_HEIGHT};
+int SG_FRAME_NEXT[4] =  {125, 180, 125 + SG_ITEM_WIDTH, 180 + SG_ITEM_HEIGHT};
 
 typedef enum {
 	SG_SLEEP,
@@ -296,11 +304,6 @@ void lcd_range_line_draw(uint16_t line_color, int dir, int len) {
 			break;
 	}
 }
-
-const uint16_t COLOR_DRAG     = YELLOW;
-const uint16_t COLOR_R_CLICK  = RED;
-const uint16_t COLOR_SCROLL_Y = BLUE;
-const uint16_t COLOR_SCROLL_X = ORANGE;
 
 void lcd_text_draw(uint16_t lcd_color) {
 
@@ -529,8 +532,8 @@ axis_t get_axis_delta(axis_t axis_cur, axis_t axis_old, double z) {
 	return axis_delta;
 }
 
-void lcd_frame_set(int frame[], int16_t lcd_color) {
-	lcd_frame(frame[0], frame[1], frame[2], frame[3], lcd_color, 5);
+void lcd_frame_set(int frame[], int16_t lcd_color, uint8_t ps) {
+	lcd_frame(frame[0], frame[1], frame[2], frame[3], lcd_color, ps);
 }
 
 char *get_sg_title(int sg_no) {
@@ -565,60 +568,103 @@ bool is_frame_touch(int frame[], axis_t axis_cur) {
 	return false;
 }
 
+/** 設定画面描画 **/
 void lcd_sg_draw(int sg_no) {
 	lcd_clr(BLACK);
 
-	lcd_str(SG_TITLE_X, SG_TITLE_Y, get_sg_title(sg_no), &Font20, WHITE, BLACK);
+	// 設定項目タイトルの表示
+	lcd_str(SG_TITLE_X, SG_TITLE_Y, get_sg_title(sg_no), &Font20, RED, BLACK);
+
+
+	// 設定値の表示
+	lcd_frame_set(SG_FRAME_VALUE, RED, 1);
 
 	char tmps[32];
-	sprintf(tmps, "value = %d", g_sg_data[sg_no]);
-	lcd_str(SG_VALUE_X, SG_VALUE_Y, tmps, &Font20, WHITE, BLACK);
-			
-	lcd_frame_set(SG_PREV, WHITE); // 
-	lcd_frame_set(SG_NEXT, WHITE); // 
-	lcd_frame_set(SG_UP  , WHITE); // 
-	lcd_frame_set(SG_DOWN, WHITE); // 
-}
+	sprintf(tmps, "Value ");
 
-void lcd_sg_set(int place, char *text) {
+	switch(sg_no) {
+		case SG_SLEEP:
+			if(g_sg_data[sg_no] == 0) {
+				strcat(tmps, "OFF");
+			} else {
+				sprintf(tmps, "%s%d", tmps, g_sg_data[sg_no]);
+			}
+			break;
+		case SG_DRUG_DIR:
+		case SG_R_CLICK_DIR:
+		case SG_SCROLL_Y_DIR:
+		case SG_SCROLL_X_DIR:
+			// 方向系の設定は文字に変換
+			switch(g_sg_data[sg_no]) {
+				case DIR_TOP:		strcat(tmps, "TOP"); break;
+				case DIR_BOTTOM:	strcat(tmps, "BOTOM"); break;
+				case DIR_LEFT:		strcat(tmps, "LEFT"); break;
+				case DIR_RIGHT:		strcat(tmps, "RIGHT"); break;
+			}
+			break;
+		default:
+			sprintf(tmps, "%s%d", tmps, g_sg_data[sg_no]);
+			break;
+	}
+	lcd_str(SG_VALUE_X, SG_VALUE_Y, tmps, &Font20, WHITE, BLACK);
+
+	// 設定変更する４つのボタンの表示
+	int padding=20;	
+	lcd_frame_set(SG_FRAME_DOWN, GRAY, 3);
+	lcd_str(SG_FRAME_DOWN[0]+padding, SG_FRAME_DOWN[1]+padding, "DOWN", &Font20, WHITE, BLACK);
+
+	lcd_frame_set(SG_FRAME_UP  , GRAY, 3);
+	lcd_str(SG_FRAME_UP[0]+padding, SG_FRAME_UP[1]+padding, " UP", &Font20, WHITE, BLACK);
+
+	lcd_frame_set(SG_FRAME_PREV, GRAY, 3);
+	lcd_str(SG_FRAME_PREV[0]+padding, SG_FRAME_PREV[1]+padding, "  PREV", &Font20, WHITE, BLACK);
+
+	lcd_frame_set(SG_FRAME_NEXT, GRAY, 3);
+	lcd_str(SG_FRAME_NEXT[0]+padding, SG_FRAME_NEXT[1]+padding, "NEXT", &Font20, WHITE, BLACK);
 }
 
 bool sg_operation(int *sg_no, axis_t axis_cur) {
 
 	int max = 0;
 	switch(*sg_no) {
-		case SG_SLEEP:		max=30;		break;
-		case SG_DRUG_DIR:	max=DIR_NUM;	break;
-		case SG_DRUG_LEN:	max=115;	break;
-		case SG_R_CLICK_DIR:	max=DIR_NUM;	break;
-		case SG_R_CLICK_LEN:	max=115;	break;
-		case SG_SCROLL_Y_DIR:	max=DIR_NUM;	break;
-		case SG_SCROLL_Y_LEN:	max=115;	break;
-		case SG_SCROLL_X_DIR:	max=DIR_NUM;	break;
-		case SG_SCROLL_X_LEN:	max=115;	break;
+		case SG_SLEEP:
+			max=30;
+			break;
+		case SG_DRUG_DIR:
+		case SG_R_CLICK_DIR:
+		case SG_SCROLL_Y_DIR:
+		case SG_SCROLL_X_DIR:
+			max=DIR_NUM-1;
+			break;
+		case SG_DRUG_LEN:
+		case SG_R_CLICK_LEN:
+		case SG_SCROLL_Y_LEN:
+		case SG_SCROLL_X_LEN:
+			max=115;
+			break;
 	}
 
-	if(is_frame_touch(SG_DOWN, axis_cur)) {
-		printf("SG_DOWN\n");
+	if(is_frame_touch(SG_FRAME_DOWN, axis_cur)) {
+		printf("SG_FRAME_DOWN\n");
 		if(g_sg_data[*sg_no] > 0) {
 			g_sg_data[*sg_no] --;
 		}
 		return true;
-	} else if(is_frame_touch(SG_UP, axis_cur)) {
-		printf("SG_UP\n");
+	} else if(is_frame_touch(SG_FRAME_UP, axis_cur)) {
+		printf("SG_FRAME_UP\n");
 		if(g_sg_data[*sg_no] < max) {
 			g_sg_data[*sg_no] ++;
 		}
 		return true;
-	} else if(is_frame_touch(SG_NEXT, axis_cur)) {
-		printf("SG_NEXT\n");
+	} else if(is_frame_touch(SG_FRAME_NEXT, axis_cur)) {
+		printf("SG_FRAME_NEXT\n");
 		if(*sg_no <= SG_NUM) {
 			*sg_no = *sg_no + 1;
 		}
 		return true;
 	}
-	if(is_frame_touch(SG_PREV, axis_cur)) {
-		printf("SG_PREV\n");
+	if(is_frame_touch(SG_FRAME_PREV, axis_cur)) {
+		printf("SG_FRAME_PREV\n");
 		if(*sg_no > 0) {
 			*sg_no = *sg_no - 1;
 		}
