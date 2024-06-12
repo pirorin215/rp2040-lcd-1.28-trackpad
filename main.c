@@ -190,11 +190,6 @@ typedef enum {
 #define TRIGGER_SG_LEFT     30 // 設定画面を出す操作のタッチ位置 LEFT
 #define TRIGGER_SG_RIGHT   190 // 設定画面を出す操作のタッチ位置 RIGHT
 
-int g_limit_X_left  =  70;	// 判定ライン左
-int g_limit_X_right = 190;	// 判定ライン右
-int g_limit_Y_TOP   =  70;	// 判定ライン上
-int g_limit_Y_BOTOM =  70;	// 判定ライン下
-
 #define SCROLL_Y_LIMIT_X         190 // 縦スクロール判定位置
 #define CLICK_RIGHT_LIMIT_X       70 // 右クリック判定位置
 
@@ -207,6 +202,8 @@ int g_limit_Y_BOTOM =  70;	// 判定ライン下
 #define TOUCH_START_MSEC_LIMIT    30 // 新しいタッチ開始の判定msec
 #define DRAG_UNDER_LIMIT_MSEC    300 // ドラッグ開始から解除までの最低msec
 
+#define FLASH_TARGET_OFFSET 0x1F0000 // W25Q16JVの最終ブロック(Block31)のセクタ0の先頭アドレス
+
 const char POS_X[3] = { 40, 40, 40};
 const char POS_Y[3] = { 40, 60, 80};
 
@@ -218,6 +215,41 @@ void truncateString(char* text, int maxLength) {
     text[maxLength] = '\0'; // 文字列をmaxLengthの長さに切り詰める
   }
 }
+
+typedef enum {
+	SG_SLEEP,
+	SG_DRUG_DIR,
+	SG_DRUG_LEN,
+	SG_RIGHT_CLICK_DIR,
+	SG_RIGHT_CLICK_LEN,
+	SG_SCROLL_Y_DIR,
+	SG_SCROLL_Y_LEN,
+	SG_SCROLL_X_DIR,
+	SG_SCROLL_X_LEN,
+	SG_NUM,
+} SG_ITEM;
+
+uint8_t g_sg_data[SG_NUM];
+
+/** フラッシュに設定保存 **/
+static void save_sg_to_flash(void) {
+	uint32_t ints = save_and_disable_interrupts(); // 割り込み無効にする
+	flash_range_erase(FLASH_TARGET_OFFSET, FLASH_SECTOR_SIZE); // Flash消去
+	flash_range_program(FLASH_TARGET_OFFSET, g_sg_data, FLASH_PAGE_SIZE); // Flash書き込み
+	restore_interrupts(ints); // 割り込みフラグを戻す
+}
+
+/** フラッシュから設定読み込み **/
+void load_sg_from_flash(void) {
+	const uint8_t *flash_target_contents = (const uint8_t *) (XIP_BASE + FLASH_TARGET_OFFSET);
+
+	for(int i=0; i < SG_NUM; i++ ) {
+		g_sg_data[i] = flash_target_contents[i];
+		printf("SG %2d = %d\r\n", i, g_sg_data[i]);
+	}
+}
+
+
 
 void lcd_text_draw(uint16_t lcd_color) {
 
@@ -308,40 +340,6 @@ static void i2c_slave_handler(i2c_inst_t *i2c, i2c_slave_event_t event) {
 	}
 }
 
-typedef enum {
-	SG_SLEEP,
-	SG_DRUG_DIR,
-	SG_DRUG_LEN,
-	SG_RIGHT_CLICK_DIR,
-	SG_RIGHT_CLICK_LEN,
-	SG_SCROLL_Y_DIR,
-	SG_SCROLL_Y_LEN,
-	SG_SCROLL_X_DIR,
-	SG_SCROLL_X_LEN,
-	SG_NUM,
-} SG_ITEM;
-
-#define FLASH_TARGET_OFFSET 0x1F0000 // W25Q16JVの最終ブロック(Block31)のセクタ0の先頭アドレス
-
-uint8_t g_sg_data[SG_NUM];
-
-/** フラッシュに設定保存 **/
-static void save_sg_to_flash(void) {
-	uint32_t ints = save_and_disable_interrupts(); // 割り込み無効にする
-	flash_range_erase(FLASH_TARGET_OFFSET, FLASH_SECTOR_SIZE); // Flash消去
-	flash_range_program(FLASH_TARGET_OFFSET, g_sg_data, FLASH_PAGE_SIZE); // Flash書き込み
-	restore_interrupts(ints); // 割り込みフラグを戻す
-}
-
-/** フラッシュから設定読み込み **/
-void load_sg_from_flash(void) {
-	const uint8_t *flash_target_contents = (const uint8_t *) (XIP_BASE + FLASH_TARGET_OFFSET);
-
-	for(int i=0; i < SG_NUM; i++ ) {
-		g_sg_data[i] = flash_target_contents[i];
-		printf("SG %2d = %d\r\n", i, g_sg_data[i]);
-	}
-}
 
 int abs_value(int a, int b) {
 	return abs(abs(a) - abs(b));
@@ -448,8 +446,9 @@ void i2c_data_set(int click, int x, int y, int h, int v) {
 }
 
 // 画面方向に合わせてX,Y座標を補正して取得
-axis_t axis_rotate(axis_t axis_cur) {
+axis_t axis_rotate() {
 	CST816S_Get_Point(); // 座標を取得
+	axis_t axis_cur;
 	axis_cur.x = (int16_t)Touch_CTS816.x_point;
 	axis_cur.y = (int16_t)Touch_CTS816.y_point;
 	if(plosa->scandir==1){
@@ -478,11 +477,139 @@ axis_t get_axis_delta(axis_t axis_cur, axis_t axis_old, double z) {
 
 	return axis_delta;
 }
+
+///////////////////////////////
+// 設定画面系
+///////////////////////////////
+#define SG_TITLE_X     60
+#define SG_TITLE_Y     10
+char g_sg_title_buf[20] = {0};
+
+#define SG_VALUE_X     80
+#define SG_VALUE_Y     90
+char g_sg_value_buf[20] = {0};
+
+#define SG_ITEM_HEIGHT 30
+#define SG_ITEM_WIDTH  80
+
+// 設定画面のボタンのフレーム
+int SG_PREV[4] = { 30,  30,  30 + SG_ITEM_WIDTH,  30 + SG_ITEM_HEIGHT};
+int SG_NEXT[4] = {120,  30, 120 + SG_ITEM_WIDTH,  30 + SG_ITEM_HEIGHT};
+int SG_DOWN[4] = { 30, 150,  30 + SG_ITEM_WIDTH, 150 + SG_ITEM_HEIGHT};
+int SG_UP[4]   = {120, 150, 120 + SG_ITEM_WIDTH, 150 + SG_ITEM_HEIGHT};
+
+void lcd_frame_set(int frame[], int16_t lcd_color) {
+	lcd_frame(frame[0], frame[1], frame[2], frame[3], lcd_color, 1);
+}
+
+/** 指定座標がフレーム範囲に入ってるかチェック **/
+bool is_frame_touch(int frame[], axis_t axis_cur) {
+	if(
+		frame[0]   <= axis_cur.x && 
+		frame[1]   <= axis_cur.y && 
+		axis_cur.x <= frame[2] && 
+		axis_cur.y <= frame[3]
+	) {
+		return true;
+	}
+	return false;
+}
+
+void lcd_sg_draw() {
+	lcd_clr(BLACK);
+
+	lcd_str(SG_TITLE_X, SG_TITLE_Y, g_sg_title_buf, &Font20, WHITE, BLACK);
+	lcd_str(SG_VALUE_X, SG_VALUE_Y, g_sg_value_buf, &Font20, WHITE, BLACK);
+
+	lcd_frame_set(SG_PREV, WHITE); // 
+	lcd_frame_set(SG_NEXT, WHITE); // 
+	lcd_frame_set(SG_UP  , WHITE); // 
+	lcd_frame_set(SG_DOWN, WHITE); // 
+}
+
+void lcd_sg_set(int place, char *text) {
+}
+
+void sg_title_set(int sg_no) {
+	// 設定項目タイトル
+	switch(sg_no) {
+		case SG_SLEEP:
+			sprintf(g_sg_title_buf, "SLEEP");
+			break;
+		default:
+			break;
+	}
+}
+
+
 /** 設定画面処理ループ **/
 void sg_display_loop() {
 	/////////// 反転テスト
-	g_sg_data[SG_SLEEP] = !g_sg_data[SG_SLEEP];
-	printf("g_sg_data[SG_SLEEP]=%d\r\n", g_sg_data[SG_SLEEP]);
+	//g_sg_data[SG_SLEEP] = !g_sg_data[SG_SLEEP];
+	//printf("g_sg_data[SG_SLEEP]=%d\r\n", g_sg_data[SG_SLEEP]);
+	
+	axis_t axis_cur;				// 現在座標
+	int touch_mode = 0;				// 操作モード
+	int sg_no = SG_SLEEP;				// 設定項目番号
+	uint32_t last_touch_time = time_us_32();	// 最後に触った時刻
+
+	lcd_clr(BLACK);		// 画面クリア
+	sg_title_set(sg_no);	// 設定項目タイトル
+	lcd_sg_draw();
+
+	while(true) {
+		// 軌跡を表示
+		lcd_bez3circ(axis_cur.x, axis_cur.y, 3, GREEN, 3, 0, 0);
+
+		// タッチが行われた場合
+		if(flag_touch){
+			axis_cur = axis_rotate(); // 画面方向に合わせてX,Y座標を補正して取得
+		
+			// タッチをしはじめた時
+			if( ((time_us_32()-last_touch_time)/MS) > TOUCH_START_MSEC_LIMIT){
+				printf("TOUCH START\r\n");
+				touch_mode = MODE_TOUCHING;
+			} 
+				
+			last_touch_time = time_us_32();
+			flag_touch = 0;
+		} else {
+			touch_mode = MODE_NONE;
+		} // if(flag) END
+
+		// 各種操作
+		bool b_op = false; // 操作したかどうかフラグ
+		if(touch_mode == MODE_TOUCHING) {
+			if(is_frame_touch(SG_NEXT, axis_cur)) {
+				lcd_clr(BLACK); // 画面クリア
+				b_op = true;
+				return;
+			}
+
+			uint8_t i_tmp = g_sg_data[SG_SLEEP];
+			if(is_frame_touch(SG_DOWN, axis_cur)) {
+				if(i_tmp > 0) {
+					i_tmp --;
+				}
+				b_op = true;
+			}
+			if(is_frame_touch(SG_UP, axis_cur)) {
+				if(i_tmp < 30) {
+					i_tmp ++;
+				}
+				b_op = true;
+			}
+			g_sg_data[SG_SLEEP] = i_tmp;
+			sprintf(g_sg_value_buf, "%d", g_sg_data[SG_SLEEP]);
+		}
+		if(b_op) {
+			sg_title_set(sg_no); // 設定項目タイトル
+			lcd_sg_draw();
+		}
+		lcd_display(b0);
+		sleep_ms(100);	
+	}
+
 	save_sg_to_flash();
 }
 
@@ -503,7 +630,7 @@ void mouse_display_loop() {
 	int sg_trigger_cnt = 0;				// 設定画面の操作カウント
 	uint32_t sg_trigger_time = time_us_32();	// 設定画面の操作開始時刻
 
-	printf("loop start !!!!!!!!!!!!!!\r\n");
+	printf("loop start !!\r\n");
 	
 	while(true){
 		// クリック状態が変わったら背景色を設定(画面クリア）
@@ -524,7 +651,7 @@ void mouse_display_loop() {
 			}
 			plosa->is_sleeping=false;
 
-			axis_cur = axis_rotate(axis_cur); // 画面方向に合わせてX,Y座標を補正して取得
+			axis_cur = axis_rotate(); // 画面方向に合わせてX,Y座標を補正して取得
 		
 			// 軌跡を表示
 			lcd_bez3circ(axis_cur.x, axis_cur.y, 3, GREEN, 3, 0, 0);
