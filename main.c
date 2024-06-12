@@ -162,8 +162,8 @@ typedef struct
 
 typedef enum {
 	NONE_CLICK,     // 0x00
-	LEFT_CLICK,     // 0x01
-	RIGHT_CLICK,    // 0x02
+	L_CLICK,     // 0x01
+	R_CLICK,    // 0x02
 	MIDDLE_CLICK,   // 0x03
 	CMD_POINTER,    // 0x04
 	NOCHANGE_CLICK, // 0x05
@@ -179,8 +179,8 @@ typedef enum {
   MODE_SCROLL_X,
   MODE_DRAG,
   MODE_RELEASE,
-  MODE_CLICK_LEFT,
-  MODE_CLICK_RIGHT,
+  MODE_L_CLICK,
+  MODE_R_CLICK,
 } TOUCH_MODE;
 
 #define SCREEN_WIDTH 240
@@ -191,7 +191,7 @@ typedef enum {
 #define TRIGGER_SG_RIGHT   190 // 設定画面を出す操作のタッチ位置 RIGHT
 
 #define SCROLL_Y_LIMIT_X         190 // 縦スクロール判定位置
-#define CLICK_RIGHT_LIMIT_X       70 // 右クリック判定位置
+#define R_CLICK_LIMIT_X       70 // 右クリック判定位置
 
 #define SCROLL_X_LIMIT_Y         190 // 横スクロール判定位置
 #define DRAG_LIMIT_Y              70 // ドラッグ開始判定位置
@@ -199,7 +199,7 @@ typedef enum {
 //////////////////////////////////////////////////////////////
 
 #define CLICK_RELEASE_COUNT_LIMIT  5 // クリック判定
-#define TOUCH_START_MSEC_LIMIT    30 // 新しいタッチ開始の判定msec
+#define TOUCH_START_MSEC_LIMIT   100 // 新しいタッチ開始の判定msec
 #define DRAG_UNDER_LIMIT_MSEC    300 // ドラッグ開始から解除までの最低msec
 
 #define FLASH_TARGET_OFFSET 0x1F0000 // W25Q16JVの最終ブロック(Block31)のセクタ0の先頭アドレス
@@ -210,18 +210,31 @@ const char POS_Y[3] = { 40, 60, 80};
 char g_text_buf[3][128] = {{0}};
 char g_old_text_buf[3][128] = {{0}};
 
-void truncateString(char* text, int maxLength) {
-  if (strlen(text) > maxLength) {
-    text[maxLength] = '\0'; // 文字列をmaxLengthの長さに切り詰める
-  }
-}
+///////////////////////////////
+// 設定画面系
+///////////////////////////////
+#define RENZOKU_TOUCH_MSEC_LIMIT   500 // 連続入力の判定msec
+#define SG_TITLE_X      10
+#define SG_TITLE_Y     100
+
+#define SG_VALUE_X      10
+#define SG_VALUE_Y     140
+
+#define SG_ITEM_HEIGHT  60
+#define SG_ITEM_WIDTH  115
+
+// 設定画面のボタンのフレーム
+int SG_DOWN[4] = {  0,  30,   0 + SG_ITEM_WIDTH,  30 + SG_ITEM_HEIGHT};
+int SG_UP  [4] = {125,  30, 125 + SG_ITEM_WIDTH,  30 + SG_ITEM_HEIGHT};
+int SG_PREV[4] = {  0, 180,   0 + SG_ITEM_WIDTH, 180 + SG_ITEM_HEIGHT};
+int SG_NEXT[4] = {125, 180, 125 + SG_ITEM_WIDTH, 180 + SG_ITEM_HEIGHT};
 
 typedef enum {
 	SG_SLEEP,
 	SG_DRUG_DIR,
 	SG_DRUG_LEN,
-	SG_RIGHT_CLICK_DIR,
-	SG_RIGHT_CLICK_LEN,
+	SG_R_CLICK_DIR,
+	SG_R_CLICK_LEN,
 	SG_SCROLL_Y_DIR,
 	SG_SCROLL_Y_LEN,
 	SG_SCROLL_X_DIR,
@@ -230,6 +243,12 @@ typedef enum {
 } SG_ITEM;
 
 uint8_t g_sg_data[SG_NUM];
+
+void truncateString(char* text, int maxLength) {
+  if (strlen(text) > maxLength) {
+    text[maxLength] = '\0'; // 文字列をmaxLengthの長さに切り詰める
+  }
+}
 
 /** フラッシュに設定保存 **/
 static void save_sg_to_flash(void) {
@@ -249,14 +268,12 @@ void load_sg_from_flash(void) {
 	}
 }
 
-
-
 void lcd_text_draw(uint16_t lcd_color) {
 
 	// 線を描画
 	lcd_line(   SCROLL_Y_LIMIT_X,                0,    SCROLL_Y_LIMIT_X,     SCREEN_WIDTH, BLUE,   3);
 	lcd_line(                  0, SCROLL_X_LIMIT_Y,       SCREEN_HEIGHT, SCROLL_X_LIMIT_Y, ORANGE, 3);
-	lcd_line(CLICK_RIGHT_LIMIT_X,                0, CLICK_RIGHT_LIMIT_X,     SCREEN_WIDTH, RED,    3);
+	lcd_line(R_CLICK_LIMIT_X,                0, R_CLICK_LIMIT_X,     SCREEN_WIDTH, RED,    3);
 	lcd_line(                  0,     DRAG_LIMIT_Y,       SCREEN_HEIGHT,     DRAG_LIMIT_Y, YELLOW, 3);
 
 	// 文字列データを表示
@@ -478,31 +495,30 @@ axis_t get_axis_delta(axis_t axis_cur, axis_t axis_old, double z) {
 	return axis_delta;
 }
 
-///////////////////////////////
-// 設定画面系
-///////////////////////////////
-#define SG_TITLE_X     60
-#define SG_TITLE_Y     10
-char g_sg_title_buf[20] = {0};
-
-#define SG_VALUE_X     80
-#define SG_VALUE_Y     90
-char g_sg_value_buf[20] = {0};
-
-#define SG_ITEM_HEIGHT 30
-#define SG_ITEM_WIDTH  80
-
-// 設定画面のボタンのフレーム
-int SG_PREV[4] = { 30,  30,  30 + SG_ITEM_WIDTH,  30 + SG_ITEM_HEIGHT};
-int SG_NEXT[4] = {120,  30, 120 + SG_ITEM_WIDTH,  30 + SG_ITEM_HEIGHT};
-int SG_DOWN[4] = { 30, 150,  30 + SG_ITEM_WIDTH, 150 + SG_ITEM_HEIGHT};
-int SG_UP[4]   = {120, 150, 120 + SG_ITEM_WIDTH, 150 + SG_ITEM_HEIGHT};
-
 void lcd_frame_set(int frame[], int16_t lcd_color) {
-	lcd_frame(frame[0], frame[1], frame[2], frame[3], lcd_color, 1);
+	lcd_frame(frame[0], frame[1], frame[2], frame[3], lcd_color, 5);
 }
 
-/** 指定座標がフレーム範囲に入ってるかチェック **/
+char *get_sg_title(int sg_no) {
+
+	char *tmps = NULL;
+	tmps = (char*)malloc(sizeof(char) * 32);
+	// 設定項目タイトル
+	switch(sg_no) {
+		case SG_SLEEP:		sprintf(tmps, "%02d:SLEEP", sg_no); break;
+		case SG_DRUG_DIR:	sprintf(tmps, "%02d:DRUG DIR", sg_no); break;
+		case SG_DRUG_LEN:	sprintf(tmps, "%02d:DRUG LEN", sg_no); break;
+		case SG_R_CLICK_DIR:	sprintf(tmps, "%02d:R CLICK DIR", sg_no); break;
+		case SG_R_CLICK_LEN:	sprintf(tmps, "%02d:R CLICK LEN", sg_no); break;
+		case SG_SCROLL_Y_DIR:	sprintf(tmps, "%02d:SCROLL Y DIR", sg_no); break;
+		case SG_SCROLL_Y_LEN:	sprintf(tmps, "%02d:SCROLL Y LEN", sg_no); break;
+		case SG_SCROLL_X_DIR:	sprintf(tmps, "%02d:SCROLL X DIR", sg_no); break;
+		case SG_SCROLL_X_LEN:	sprintf(tmps, "%02d:SCROLL X LEN", sg_no); break;
+	}
+	return tmps;
+}                                  
+                                   
+/** 指定 座標がフレーム範囲に入って座標がフレーム範囲に入ってるかチェック **/
 bool is_frame_touch(int frame[], axis_t axis_cur) {
 	if(
 		frame[0]   <= axis_cur.x && 
@@ -515,12 +531,15 @@ bool is_frame_touch(int frame[], axis_t axis_cur) {
 	return false;
 }
 
-void lcd_sg_draw() {
+void lcd_sg_draw(int sg_no) {
 	lcd_clr(BLACK);
 
-	lcd_str(SG_TITLE_X, SG_TITLE_Y, g_sg_title_buf, &Font20, WHITE, BLACK);
-	lcd_str(SG_VALUE_X, SG_VALUE_Y, g_sg_value_buf, &Font20, WHITE, BLACK);
+	lcd_str(SG_TITLE_X, SG_TITLE_Y, get_sg_title(sg_no), &Font20, WHITE, BLACK);
 
+	char tmps[32];
+	sprintf(tmps, "value = %d", g_sg_data[sg_no]);
+	lcd_str(SG_VALUE_X, SG_VALUE_Y, tmps, &Font20, WHITE, BLACK);
+			
 	lcd_frame_set(SG_PREV, WHITE); // 
 	lcd_frame_set(SG_NEXT, WHITE); // 
 	lcd_frame_set(SG_UP  , WHITE); // 
@@ -530,32 +549,53 @@ void lcd_sg_draw() {
 void lcd_sg_set(int place, char *text) {
 }
 
-void sg_title_set(int sg_no) {
-	// 設定項目タイトル
-	switch(sg_no) {
-		case SG_SLEEP:
-			sprintf(g_sg_title_buf, "SLEEP");
-			break;
-		default:
-			break;
+bool sg_operation(int *sg_no, axis_t axis_cur) {
+
+	if(is_frame_touch(SG_DOWN, axis_cur)) {
+		printf("SG_DOWN\n");
+		if(g_sg_data[*sg_no] > 0) {
+			g_sg_data[*sg_no] --;
+		}
+		return true;
+	} else if(is_frame_touch(SG_UP, axis_cur)) {
+		printf("SG_UP\n");
+		if(g_sg_data[*sg_no] < 30) {
+			g_sg_data[*sg_no] ++;
+		}
+		return true;
+	} else if(is_frame_touch(SG_NEXT, axis_cur)) {
+		printf("SG_NEXT\n");
+		if(*sg_no <= SG_NUM) {
+			*sg_no = *sg_no + 1;
+		}
+		return true;
 	}
+	if(is_frame_touch(SG_PREV, axis_cur)) {
+		printf("SG_PREV\n");
+		if(*sg_no > 0) {
+			*sg_no = *sg_no - 1;
+		}
+		return true;
+	}
+	return false; // 操作なし
 }
 
+bool sg_no_change(int *sg_no, axis_t axis_cur) {
+	bool b_op = false;
+
+	return b_op;
+}
 
 /** 設定画面処理ループ **/
 void sg_display_loop() {
-	/////////// 反転テスト
-	//g_sg_data[SG_SLEEP] = !g_sg_data[SG_SLEEP];
-	//printf("g_sg_data[SG_SLEEP]=%d\r\n", g_sg_data[SG_SLEEP]);
-	
 	axis_t axis_cur;				// 現在座標
 	int touch_mode = 0;				// 操作モード
 	int sg_no = SG_SLEEP;				// 設定項目番号
 	uint32_t last_touch_time = time_us_32();	// 最後に触った時刻
+	uint32_t renzoku_time = time_us_32();		// 押しっぱなし判定用
 
 	lcd_clr(BLACK);		// 画面クリア
-	sg_title_set(sg_no);	// 設定項目タイトル
-	lcd_sg_draw();
+	lcd_sg_draw(sg_no);
 
 	while(true) {
 		// 軌跡を表示
@@ -569,48 +609,36 @@ void sg_display_loop() {
 			if( ((time_us_32()-last_touch_time)/MS) > TOUCH_START_MSEC_LIMIT){
 				printf("TOUCH START\r\n");
 				touch_mode = MODE_TOUCHING;
-			} 
-				
+				renzoku_time = time_us_32();
+			} else {
+				if( ((time_us_32()-renzoku_time)/MS) > RENZOKU_TOUCH_MSEC_LIMIT){
+					touch_mode = MODE_TOUCHING;
+				} else {
+					touch_mode = MODE_NONE;
+				}
+			}
 			last_touch_time = time_us_32();
 			flag_touch = 0;
 		} else {
 			touch_mode = MODE_NONE;
-		} // if(flag) END
+			renzoku_time = time_us_32();
+		}
 
 		// 各種操作
 		bool b_op = false; // 操作したかどうかフラグ
 		if(touch_mode == MODE_TOUCHING) {
-			if(is_frame_touch(SG_NEXT, axis_cur)) {
-				lcd_clr(BLACK); // 画面クリア
-				b_op = true;
-				return;
+			b_op = sg_operation(&sg_no, axis_cur);
+			if(sg_no == SG_NUM) {   // 設定項目番号が最後の場合
+				break;		// ループ終了
 			}
-
-			uint8_t i_tmp = g_sg_data[SG_SLEEP];
-			if(is_frame_touch(SG_DOWN, axis_cur)) {
-				if(i_tmp > 0) {
-					i_tmp --;
-				}
-				b_op = true;
-			}
-			if(is_frame_touch(SG_UP, axis_cur)) {
-				if(i_tmp < 30) {
-					i_tmp ++;
-				}
-				b_op = true;
-			}
-			g_sg_data[SG_SLEEP] = i_tmp;
-			sprintf(g_sg_value_buf, "%d", g_sg_data[SG_SLEEP]);
 		}
 		if(b_op) {
-			sg_title_set(sg_no); // 設定項目タイトル
-			lcd_sg_draw();
+			lcd_sg_draw(sg_no);
 		}
 		lcd_display(b0);
-		sleep_ms(100);	
 	}
-
-	save_sg_to_flash();
+	lcd_clr(BLACK);		// 画面クリア
+	save_sg_to_flash();	// 設定保存
 }
 
 /** メイン処理ループ **/
@@ -692,9 +720,9 @@ void mouse_display_loop() {
 			}
 		
 			// 右クリック判定
-			if(release_cnt > 20 && abs_value(axis_touch.x, axis_cur.x) < 5 && abs_value(axis_touch.y, axis_cur.y) < 5 && axis_cur.x < CLICK_RIGHT_LIMIT_X) {
-				printf("MODE_CLICK_RIGHT\r\n");
-				touch_mode = MODE_CLICK_RIGHT;
+			if(release_cnt > 20 && abs_value(axis_touch.x, axis_cur.x) < 5 && abs_value(axis_touch.y, axis_cur.y) < 5 && axis_cur.x < R_CLICK_LIMIT_X) {
+				printf("MODE_R_CLICK\r\n");
+				touch_mode = MODE_R_CLICK;
 			}
 
 			// 設定画面呼び出し操作時間判定
@@ -782,17 +810,17 @@ void mouse_display_loop() {
 
 				lcd_color = ORANGE;
 				axis_delta = get_axis_delta(axis_cur, axis_old, 0.7);
-				i2c_data_set(LEFT_CLICK, axis_delta.x, axis_delta.y, 0, 0);
+				i2c_data_set(L_CLICK, axis_delta.x, axis_delta.y, 0, 0);
 				axis_old = axis_cur;
 
 				start_drag_time = time_us_32(); // ドラッグ開始時刻保存
 
 				break;	
-			case MODE_CLICK_RIGHT:
-				lcd_text_set(2, lcd_color, "CLICK RIGHT");
+			case MODE_R_CLICK:
+				lcd_text_set(2, lcd_color, "R CLICK");
 				lcd_color = BLACK;
 				
-				i2c_data_set(RIGHT_CLICK, 0, 0, 0, 0);
+				i2c_data_set(R_CLICK, 0, 0, 0, 0);
 				sleep_ms(10);	
 				i2c_data_set(NONE_CLICK, 0, 0, 0, 0);
 	
@@ -811,10 +839,10 @@ void mouse_display_loop() {
 				
 				if(axis_delta.x < 20 && axis_delta.y < 20 && release_cnt < CLICK_RELEASE_COUNT_LIMIT && delta_drag_time > DRAG_UNDER_LIMIT_MSEC) {
 					// 左クリック
-					lcd_text_set(2, lcd_color, "CLICK LEFT release_cnt=%d delta_drag_time=%d", release_cnt, delta_drag_time);
+					lcd_text_set(2, lcd_color, "L CLICK release_cnt=%d delta_drag_time=%d", release_cnt, delta_drag_time);
 					lcd_color = BLACK;	
 				
-					i2c_data_set(LEFT_CLICK, 0, 0, 0, 0);
+					i2c_data_set(L_CLICK, 0, 0, 0, 0);
 					sleep_ms(10);	
 					i2c_data_set(NONE_CLICK, 0, 0, 0, 0);
 	
