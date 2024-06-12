@@ -3,7 +3,7 @@
 
 ## How to build
 
-  - Windows WLS2
+### Windows WLS2
 
 1. Download program source
 
@@ -29,7 +29,7 @@ make
 
 5. Write uf2 to raspberry pi pico
 
-   - Mac
+### Mac
 
 1. Download program source
 ```
